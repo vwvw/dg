@@ -9,6 +9,7 @@
 #include "dg/ReachingDefinitions/ReachingDefinitions.h"
 #include "dg/BBlocksBuilder.h"
 
+#include <llvm/Support/raw_os_ostream.h>
 #include "dg/util/debug.h"
 
 namespace dg {

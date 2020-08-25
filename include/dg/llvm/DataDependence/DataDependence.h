@@ -66,7 +66,6 @@ public:
         if (!DDA) {
             buildGraph();
         }
-
         assert(DDA);
         DDA->run();
     }

@@ -106,6 +106,9 @@ class MemorySSATransformation : public DataDependenceAnalysisImpl {
     std::vector<RWNode *> findAllReachingDefinitions(RWNode *from);
     void findAllReachingDefinitions(DefinitionsMap<RWNode>& defs,
                                     RWBBlock *from,
+                                    std::set<RWBBlock *>& visitedBlocks, bool print);
+    void findAllReachingDefinitions(DefinitionsMap<RWNode>& defs,
+                                    RWBBlock *from,
                                     std::set<RWBBlock *>& visitedBlocks);
 
     void updateDefinitions(Definitions& D, RWNode *node);

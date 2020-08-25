@@ -1,7 +1,9 @@
 #include <set>
+#include <chrono>
 #include <vector>
 
 #include "dg/ReachingDefinitions/RDMap.h"
+#include <llvm/Support/raw_os_ostream.h>
 #include "dg/MemorySSA/MemorySSA.h"
 #include "dg/BBlocksBuilder.h"
 
@@ -50,7 +52,6 @@ MemorySSATransformation::Definitions::update(RWNode *node) {
 /// ------------------------------------------------------------------
 // class MemorySSATransformation
 /// ------------------------------------------------------------------
-
 // find definitions of a given node
 std::vector<RWNode *>
 MemorySSATransformation::findDefinitions(RWNode *node) {
@@ -58,7 +59,9 @@ MemorySSATransformation::findDefinitions(RWNode *node) {
 
     // handle reads from unknown memory
     if (node->usesUnknown()) {
-        return findAllReachingDefinitions(node);
+
+        auto x = findAllReachingDefinitions(node);
+        return x;
     }
 
     auto block = node->getBBlock();
@@ -89,7 +92,6 @@ MemorySSATransformation::findDefinitions(RWNode *node) {
         } else {
             defs.insert(defs.end(), defSet.begin(), defSet.end());
         }
-
         auto uncovered = D.uncovered(ds);
         for (auto& interval : uncovered) {
             auto preddefs
@@ -296,15 +298,20 @@ void MemorySSATransformation::performGvn() {
     DBG_SECTION_BEGIN(dda, "Starting GVN");
     std::set<RWNode *> phis(_phis.begin(), _phis.end());
 
-    for (RWBBlock *block : graph.blocks()) {
-        for (RWNode *node : block->getNodes()) {
+    for (RWBBlock *block : graph.blocks())
+    {
+        for (RWNode *node : block->getNodes())
+        {
             if (node->isUse())
+            {
                 node->defuse.add(findDefinitions(node));
+            }
         }
     }
+
     DBG_SECTION_END(dda, "GVN finished");
 
-/*
+    /*
     DBG_SECTION_BEGIN(dda, "Caching reads of unknown memory (requested)");
     for (auto *block :graph.blocks()) {
         for (auto *node : block->getNodes()) {
@@ -401,7 +408,7 @@ static void joinDefinitions(DefinitionsMap<RWNode>& from,
 void
 MemorySSATransformation::findAllReachingDefinitions(DefinitionsMap<RWNode>& defs,
                                                     RWBBlock *from,
-                                                    std::set<RWBBlock *>& visitedBlocks) {
+                                                    std::set<RWBBlock *>& visitedBlocks, bool print) {
     if (!from)
         return;
 
@@ -422,17 +429,36 @@ MemorySSATransformation::findAllReachingDefinitions(DefinitionsMap<RWNode>& defs
 
     // get the definitions from this block
     joinDefinitions(D.definitions, defs);
+    if (print)
+    {
+        llvm::errs() << "[Nicolas][MemorySSA][Starting] recursion: findAllReachDefinitions\n";
+    }
 
     // recur into predecessors
-    if (auto singlePred = from->getSinglePredecessor()) {
+    if (auto singlePred = from->getSinglePredecessor())
+    {
         findAllReachingDefinitions(defs, singlePred, visitedBlocks);
-    } else {
-        for (auto I = from->pred_begin(), E = from->pred_end(); I != E; ++I) {
+    }
+    else
+    {
+        for (auto I = from->pred_begin(), E = from->pred_end(); I != E; ++I)
+        {
             auto tmpDefs = defs;
             findAllReachingDefinitions(tmpDefs, *I, visitedBlocks);
             defs.add(tmpDefs);
         }
     }
+    if (print)
+    {
+        llvm::errs() << "[Nicolas][MemorySSA][Exiting] recursion: findAllReachDefinitions\n";
+    }
+}
+
+void MemorySSATransformation::findAllReachingDefinitions(DefinitionsMap<RWNode> &defs,
+                                                         RWBBlock *from,
+                                                         std::set<RWBBlock *> &visitedBlocks)
+{
+    return findAllReachingDefinitions(defs, from, visitedBlocks, false);
 }
 
 std::vector<RWNode *>
@@ -440,12 +466,16 @@ MemorySSATransformation::findAllReachingDefinitions(RWNode *from) {
     DBG_SECTION_BEGIN(dda, "MemorySSA - finding all definitions");
     assert(from->getBBlock() && "The node has no BBlock");
 
+    std::clock_t _time_start = std::clock();
     auto block = from->getBBlock();
     DefinitionsMap<RWNode> defs; // auxiliary map for finding defintions
     std::set<RWBBlock *> visitedBlocks; // for terminating the search
 
     auto D = findDefinitionsInBlock(from);
 
+    std::clock_t _time_middle = std::clock();
+
+    llvm::errs() << "[Nicolas][MemorySSA][Starting] expensive findAllReachingDefinitions\n";
     ///
     // -- Get the definitions from predecessors --
     // NOTE: do not add block to visitedBlocks, it may be its own predecessor,
@@ -454,7 +484,7 @@ MemorySSATransformation::findAllReachingDefinitions(RWNode *from) {
         // NOTE: we must start with emtpy defs,
         // to gather all reaching definitions (due to caching)
         assert(defs.empty());
-        findAllReachingDefinitions(defs, singlePred, visitedBlocks);
+        findAllReachingDefinitions(defs, singlePred, visitedBlocks, true);
         // cache the found definitions
         _defs[singlePred].allDefinitions = defs;
     } else {
@@ -464,7 +494,7 @@ MemorySSATransformation::findAllReachingDefinitions(RWNode *from) {
         // NOTE: no caching here...
         for (auto I = block->pred_begin(), E = block->pred_end(); I != E; ++I) {
             DefinitionsMap<RWNode> tmpDefs = D.kills; // do not search for what we have already
-            findAllReachingDefinitions(tmpDefs, *I, visitedBlocks);
+            findAllReachingDefinitions(tmpDefs, *I, visitedBlocks, true);
             defs.add(tmpDefs);
             // NOTE: we cannot catch here because of the DFS nature of the search
             // (the found definitions does not contain _all_ reaching definitions)
@@ -493,10 +523,15 @@ MemorySSATransformation::findAllReachingDefinitions(RWNode *from) {
     // Gather all the defintions
     ///
     DBG_SECTION_END(dda, "MemorySSA - finding all definitions done");
+    if (double(std::clock() - _time_start) / CLOCKS_PER_SEC * 1000000 > 100)
+    {
+        llvm::errs() << "[Nicolas][MemorySSA][Exiting findDefinitions]: " << double(std::clock() - _time_start) / CLOCKS_PER_SEC * 1000 << " ms\n\n";
+    }
     return gatherNonPhisDefs(foundDefs);
 }
 
 void MemorySSATransformation::run() {
+    std::clock_t _time_start = std::clock();
     DBG_SECTION_BEGIN(dda, "Running MemorySSA analysis");
 
     if (graph.getBBlocks().empty()) {
@@ -505,7 +540,9 @@ void MemorySSATransformation::run() {
     }
 
     performLvn();
+        llvm::errs() << "[Nicolas] if + lvn: " << double(std::clock() - _time_start) / CLOCKS_PER_SEC << " s\n";
     performGvn();
+        llvm::errs() << "[Nicolas] gvn: " << double(std::clock() - _time_start) / CLOCKS_PER_SEC << " s\n";
 
     DBG_SECTION_END(dda, "Running MemorySSA analysis finished");
 }

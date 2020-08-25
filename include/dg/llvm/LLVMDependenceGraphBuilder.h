@@ -91,6 +91,7 @@ class LLVMDependenceGraphBuilder {
     void _runPointerAnalysis() {
         assert(_PTA && "BUG: No PTA");
 
+        llvm::errs() << "runing PTA\n";
         _timerStart();
         _PTA->run();
         _statistics.ptaTime = _timerEnd();
@@ -98,16 +99,19 @@ class LLVMDependenceGraphBuilder {
 
     void _runDataDependenceAnalysis() {
         assert(_DDA && "BUG: No RD");
-
+        llvm::errs() << "runing data dependenace\n";
         _timerStart();
         _DDA->run();
         _statistics.rdaTime = _timerEnd();
+        llvm::errs() << "\n\n over runing data dependenace\n";
     }
 
     void _runControlDependenceAnalysis() {
         _timerStart();
+        llvm::errs() << "runing control dependenace\n";
         _dg->computeControlDependencies(_options.cdAlgorithm,
                                         _options.terminationSensitive);
+        llvm::errs() << "over runing control dependenace\n";
         _statistics.cdTime = _timerEnd();
     }
 

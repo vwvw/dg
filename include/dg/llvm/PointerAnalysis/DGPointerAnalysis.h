@@ -248,11 +248,16 @@ public:
 
     }
 
+    void _timerStart() { _time_start = std::clock(); }
     bool run() override {
+        llvm::errs() << "runnning\n\n\n";
         if (options.isFSInv())
             _builder->setInvalidateNodesFlag(true);
 
+        _timerStart();
         buildSubgraph();
+        auto xx = _timerEnd();
+        llvm::errs() << "time : "<< double(xx) / CLOCKS_PER_SEC << " s\n"
 
         bool ret = false;
         if (options.isFS()) {

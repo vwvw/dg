@@ -4,6 +4,7 @@
 #include <utility>
 #include <set>
 
+#include <llvm/Support/raw_os_ostream.h>
 #include "dg/legacy/Analysis.h"
 #include "dg/legacy/DFS.h"
 
